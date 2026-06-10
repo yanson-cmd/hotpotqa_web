@@ -514,6 +514,10 @@ body.fullscreen-mode .graph-toolbar { display: none; }
 </div>
 
 <script>
+// ===== API 基础地址（托管到 GitHub Pages 时必须修改）=====
+// ⚠️ 把这个 IP 改成你虚拟机的真实 IP
+const API_BASE = "http://192.168.1.100:5000";
+
 // ===== 全局变量 =====
 let selectedQid = null;
 let selectedQtext = "";
@@ -661,7 +665,7 @@ function initNetwork() {
 
 // ===== 加载统计数据 =====
 function loadStats() {
-    fetch("/api/stats")
+    fetch(API_BASE + "/api/stats")
         .then(r => r.json())
         .then(data => {
             document.getElementById("statQuestions").textContent = data.questions;
@@ -687,7 +691,7 @@ function searchQuestions() {
     if (!kw) { setInfo("⚠️ 请输入或选择一个关键词", "orange"); return; }
     setInfo("⏳ 正在搜索...", "blue");
     
-    fetch(`/api/search?kw=${encodeURIComponent(kw)}`)
+    fetch(API_BASE + `/api/search?kw=${encodeURIComponent(kw)}`)
         .then(r => r.json())
         .then(data => {
             const panel = document.getElementById("resultsPanel");
@@ -748,7 +752,7 @@ function multiHopQuery() {
     const depth = document.getElementById("depth").value;
     setInfo("⏳ 正在查询 Neo4j 数据库...", "blue");
     
-    fetch("/api/multihop", {
+    fetch(API_BASE + "/api/multihop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ qid: selectedQid, depth: parseInt(depth) })
@@ -872,7 +876,7 @@ function closeNodeModal() {
 function clusterAnalysis() {
     setInfo("⏳ 正在进行聚类分析...", "blue");
     
-    fetch("/api/cluster")
+    fetch(API_BASE + "/api/cluster")
         .then(r => r.json())
         .then(data => {
             const div = document.getElementById("clusterResult");
@@ -904,7 +908,7 @@ function showStatsModal() {
     
     body.innerHTML = '<div style="text-align:center;padding:30px;color:#999">⏳ 加载中...</div>';
     
-    fetch("/api/stats")
+    fetch(API_BASE + "/api/stats")
         .then(r => r.json())
         .then(data => {
             let html = '';
@@ -989,13 +993,51 @@ function toggleFullscreen() {
     
     if (isFullscreen) {
         setInfo("⛶ 已进入全屏模式，按 ESC 或再次点击按钮退出", "blue");
+        // 添加退出按钮
+        addFullscreenExitBtn();
         // 触发网络重绘以适应新尺寸
         setTimeout(() => {
             if (network) network.redraw();
         }, 300);
     } else {
         setInfo("⛶ 已退出全屏模式", "green");
+        removeFullscreenExitBtn();
     }
+}
+
+function addFullscreenExitBtn() {
+    removeFullscreenExitBtn();
+    const btn = document.createElement("div");
+    btn.id = "fullscreen-exit-btn";
+    btn.innerHTML = "⛶ 退出全屏";
+    btn.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 9999;
+        padding: 10px 20px;
+        background: rgba(0,0,0,0.7);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.3s;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    `;
+    btn.onmouseover = function() { this.style.background = "rgba(0,0,0,0.9)"; };
+    btn.onmouseout = function() { this.style.background = "rgba(0,0,0,0.7)"; };
+    btn.onclick = function(e) {
+        e.stopPropagation();
+        toggleFullscreen();
+    };
+    document.body.appendChild(btn);
+}
+
+function removeFullscreenExitBtn() {
+    const btn = document.getElementById("fullscreen-exit-btn");
+    if (btn) btn.remove();
 }
 
 // ===== 8. 清空图谱 =====
@@ -1115,7 +1157,7 @@ document.addEventListener("click", function(e) {
     }
 });
 
-// ===== 11. ESC 键关闭模态框和全屏 =====
+// ===== 11. ESC 键关闭模态框和退出全屏 =====
 document.addEventListener("keydown", function(e) {
     if (e.key === "Escape") {
         closeNodeModal();
@@ -1124,6 +1166,7 @@ document.addEventListener("keydown", function(e) {
         // 退出全屏模式
         if (document.body.classList.contains("fullscreen-mode")) {
             document.body.classList.remove("fullscreen-mode");
+            removeFullscreenExitBtn();
             setInfo("⛶ 已退出全屏模式", "green");
             setTimeout(() => {
                 if (network) network.redraw();
