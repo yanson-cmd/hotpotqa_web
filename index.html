@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HotpotQA 多跳知识图谱查询系统</title>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+/* ===== 全局样式 ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+body.fullscreen-mode .container { max-width: 100%; padding: 10px; }
+body.fullscreen-mode #mynetwork { height: calc(100vh - 120px); }
+body.fullscreen-mode .header,
+body.fullscreen-mode .controls,
+body.fullscreen-mode .info-bar,
+body.fullscreen-mode .results-panel,
+body.fullscreen-mode .cluster-result,
+body.fullscreen-mode .history-panel { display: none; }
+body.fullscreen-mode .graph-container { margin: 0; border-radius: 0; }
+body.fullscreen-mode .graph-toolbar { display: none; }
+
+.container {
+    max-width: 1480px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* ===== 顶部标题 ===== */
+.header {
+    background: rgba(255,255,255,0.95);
+    border-radius: 16px;
+    padding: 20px 28px;
+    margin-bottom: 16px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.header-title h1 {
+    font-size: 22px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.header-title .subtitle { font-size: 12px; color: #888; -webkit-text-fill-color: #888; }
+.header-stats { display: flex; gap: 14px; flex-wrap: wrap; }
+.stat-item { text-align: center; padding: 6px 14px; background: #f8f9fa; border-radius: 8px; min-width: 70px; }
+.stat-item .number { font-size: 18px; font-weight: 700; color: #667eea; }
+.stat-item .label { font-size: 10px; color: #888; }
+
+/* ===== 控制面板 ===== */
+.controls {
+    background: rgba(255,255,255,0.95);
+    border-radius: 14px;
+    padding: 16px 22px;
+    margin-bottom: 14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+}
+.controls-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+.controls-row:last-child { margin-bottom: 0; }
+.controls label { font-weight: 600; color: #444; font-size: 13px; }
+.controls input, .controls select {
+    padding: 7px 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 13px;
+    outline: none;
+    transition: all 0.3s;
+    background: white;
+}
+.controls input:focus, .controls select:focus { border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
+.controls input { width: 200px; }
+
+.search-wrapper { position: relative; display: inline-block; }
+.search-wrapper input { width: 200px; padding-right: 28px; }
+.search-dropdown-btn {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; cursor: pointer; font-size: 14px; color: #888; padding: 3px;
+}
+.search-dropdown {
+    position: absolute; top: 105%; left: 0; width: 100%;
+    background: white; border: 2px solid #e0e0e0; border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 1000;
+    display: none; max-height: 340px; overflow-y: auto;
+}
+.search-dropdown.show { display: block; }
+.search-dropdown .dropdown-header {
+    padding: 7px 12px; font-size: 11px; color: #999;
+    background: #f8f9fa; border-bottom: 1px solid #eee;
+}
+.search-dropdown .dropdown-item {
+    padding: 8px 12px; cursor: pointer; font-size: 13px;
+    color: #333; border-bottom: 1px solid #f5f5f5;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.search-dropdown .dropdown-item:hover { background: #f0f0ff; }
+.search-dropdown .dropdown-item .tag-count { font-size: 10px; color: #999; background: #f0f0f0; padding: 2px 6px; border-radius: 8px; }
+
+.btn {
+    padding: 7px 16px; border: none; border-radius: 8px;
+    cursor: pointer; font-size: 13px; font-weight: 600;
+    transition: all 0.3s; display: inline-flex; align-items: center; gap: 5px;
+}
+.btn-primary { background: #667eea; color: white; }
+.btn-primary:hover { background: #5a6fd6; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102,126,234,0.3); }
+.btn-success { background: #2ecc71; color: white; }
+.btn-success:hover { background: #27ae60; transform: translateY(-1px); }
+.btn-purple { background: #9b59b6; color: white; }
+.btn-purple:hover { background: #8e44ad; transform: translateY(-1px); }
+.btn-warning { background: #f39c12; color: white; }
+.btn-warning:hover { background: #e67e22; }
+.btn-danger { background: #e74c3c; color: white; }
+.btn-danger:hover { background: #c0392b; }
+.btn-outline { background: transparent; color: #667eea; border: 2px solid #667eea; }
+.btn-outline:hover { background: #667eea; color: white; }
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+
+/* ===== 信息栏 ===== */
+.info-bar {
+    background: rgba(255,255,255,0.93);
+    border-radius: 10px;
+    padding: 10px 18px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: #555;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+}
+.info-bar .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.status-dot.green { background: #2ecc71; }
+.status-dot.blue { background: #3498db; }
+.status-dot.orange { background: #f39c12; }
+.status-dot.red { background: #e74c3c; }
+
+/* ===== 搜索结果 ===== */
+.results-panel {
+    background: rgba(255,255,255,0.95);
+    border-radius: 10px;
+    margin-bottom: 14px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+    display: none;
+    max-height: 250px;
+    overflow: hidden;
+}
+.results-panel.show { display: block; }
+.results-header {
+    padding: 10px 18px;
+    background: #f8f9fa;
+    border-radius: 10px 10px 0 0;
+    font-weight: 600;
+    color: #444;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+}
+.results-list { padding: 6px; max-height: 200px; overflow-y: auto; }
+.result-item {
+    display: block;
+    padding: 8px 12px;
+    margin: 3px 0;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #333;
+    text-decoration: none;
+    font-size: 13px;
+    transition: all 0.2s;
+    border-left: 3px solid transparent;
+}
+.result-item:hover { background: #f0f0ff; border-left-color: #667eea; }
+.result-item.selected { background: #e8f4fd; border-left-color: #2ecc71; }
+.result-item .answer-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    background: #e8f8f5;
+    color: #27ae60;
+    border-radius: 4px;
+    font-size: 11px;
+    margin-left: 6px;
+}
+.result-item .meta { font-size: 10px; color: #999; margin-top: 2px; }
+
+/* ===== 历史记录 ===== */
+.history-panel {
+    background: rgba(255,255,255,0.88);
+    border-radius: 10px;
+    padding: 10px 16px;
+    margin-bottom: 14px;
+    display: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+    font-size: 12px;
+}
+.history-panel.show { display: block; }
+.history-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px; font-weight: 600; color: #444;
+}
+.history-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.history-item {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px; background: #f0f0ff; border-radius: 14px;
+    cursor: pointer; font-size: 12px; color: #555; transition: all 0.2s;
+}
+.history-item:hover { background: #667eea; color: white; }
+.history-item .remove-btn {
+    font-size: 10px; color: #999; cursor: pointer; margin-left: 2px;
+}
+.history-item .remove-btn:hover { color: #e74c3c; }
+
+/* ===== 可视化 ===== */
+.graph-container {
+    background: rgba(255,255,255,0.95);
+    border-radius: 14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    overflow: hidden;
+    position: relative;
+}
+.graph-toolbar {
+    padding: 8px 14px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 12px;
+}
+.legend { display: flex; gap: 12px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #555; }
+.legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+.legend-dot.question { background: #3498db; }
+.legend-dot.paragraph { background: #2ecc71; }
+.legend-dot.entity { background: #e67e22; }
+.legend-dot.answer { background: #e74c3c; border: 2px solid #c0392b; }
+
+#mynetwork {
+    width: 100%;
+    height: 470px;
+    background: #fafafa;
+}
+
+/* ===== 节点详情弹窗 ===== */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 2000;
+    justify-content: center;
+    align-items: center;
+}
+.modal-overlay.show { display: flex; }
+.modal-content {
+    background: white;
+    border-radius: 16px;
+    padding: 24px;
+    max-width: 560px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    animation: modalIn 0.3s ease;
+}
+@keyframes modalIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #f0f0f0;
+}
+.modal-header h3 { font-size: 16px; color: #333; }
+.modal-close {
+    background: none; border: none; font-size: 22px;
+    cursor: pointer; color: #999; padding: 4px 8px;
+    border-radius: 4px; transition: all 0.2s;
+}
+.modal-close:hover { background: #f0f0f0; color: #333; }
+.modal-body .detail-row {
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+.modal-body .detail-label { font-size: 11px; color: #888; margin-bottom: 3px; }
+.modal-body .detail-value { font-size: 14px; color: #333; word-break: break-all; }
+.modal-body .detail-value.answer-highlight {
+    background: #ffeaa7;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+/* ===== 聚类结果 ===== */
+.cluster-result {
+    background: rgba(255,255,255,0.95);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-top: 14px;
+    display: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+}
+.cluster-result.show { display: block; }
+.cluster-tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 16px;
+    margin: 2px;
+    font-size: 11px;
+    color: white;
+    font-weight: 500;
+}
+
+/* ===== 统计面板 ===== */
+.stats-modal .modal-content { max-width: 720px; }
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.stats-card {
+    padding: 14px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    border-radius: 12px;
+    color: white;
+    text-align: center;
+}
+.stats-card .num { font-size: 28px; font-weight: 700; }
+.stats-card .lbl { font-size: 12px; opacity: 0.85; margin-top: 4px; }
+.stats-section { margin-bottom: 14px; }
+.stats-section h4 { font-size: 14px; color: #444; margin-bottom: 8px; }
+.stats-bar-container { margin-bottom: 6px; }
+.stats-bar-label { display: flex; justify-content: space-between; font-size: 12px; color: #555; margin-bottom: 2px; }
+.stats-bar {
+    height: 20px;
+    background: #ecf0f1;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.stats-bar-fill {
+    height: 100%;
+    border-radius: 10px;
+    transition: width 0.5s ease;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 6px;
+    font-size: 10px;
+    color: white;
+    font-weight: 600;
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 860px) {
+    .container { padding: 10px; }
+    .header { flex-direction: column; text-align: center; }
+    .header-stats { justify-content: center; }
+    .search-wrapper input { width: 160px; }
+    #mynetwork { height: 340px; }
+    .graph-toolbar { flex-direction: column; align-items: flex-start; }
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+    <!-- 顶部标题 -->
+    <div class="header">
+        <div class="header-title">
+            <h1>🧠 HotpotQA 知识图谱</h1>
+            <div class="subtitle">多跳推理查询与可视化系统 · 基于 Neo4j</div>
+        </div>
+        <div class="header-stats" id="statsContainer">
+            <div class="stat-item">
+                <div class="number" id="statQuestions">-</div>
+                <div class="label">问题</div>
+            </div>
+            <div class="stat-item">
+                <div class="number" id="statParagraphs">-</div>
+                <div class="label">段落</div>
+            </div>
+            <div class="stat-item">
+                <div class="number" id="statEntities">-</div>
+                <div class="label">实体</div>
+            </div>
+            <div class="stat-item">
+                <div class="number" id="statRelations">-</div>
+                <div class="label">关系</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 控制面板 -->
+    <div class="controls">
+        <div class="controls-row">
+            <label>🔍 检索：</label>
+            <div class="search-wrapper">
+                <input type="text" id="kw" placeholder="输入或选择关键词..." autocomplete="off">
+                <button class="search-dropdown-btn" onclick="toggleDropdown(event)">▾</button>
+                <div class="search-dropdown" id="searchDropdown">
+                    <div class="dropdown-header">🔥 热门推荐关键词</div>
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="searchQuestions()">🔎 搜索</button>
+            <label style="margin-left:8px">深度：</label>
+            <select id="depth">
+                <option value="2">2 跳</option>
+                <option value="3" selected>3 跳</option>
+                <option value="4">4 跳</option>
+                <option value="5">5 跳</option>
+            </select>
+            <button class="btn btn-success" onclick="multiHopQuery()">🌐 多跳查询</button>
+            <button class="btn btn-purple" onclick="clusterAnalysis()">📊 聚类</button>
+            <button class="btn btn-warning" onclick="showStatsModal()">📈 统计</button>
+            <button class="btn btn-outline" onclick="toggleFullscreen()">⛶ 全屏</button>
+            <button class="btn btn-outline" onclick="clearGraph()">🗑️ 清空</button>
+        </div>
+    </div>
+
+    <!-- 信息栏 -->
+    <div class="info-bar" id="infoBar">
+        <span class="status-dot green"></span>
+        💡 输入关键词或从下拉列表选择，点击问题后执行多跳查询
+    </div>
+
+    <!-- 历史记录 -->
+    <div class="history-panel" id="historyPanel">
+        <div class="history-header">
+            <span>🕐 查询历史</span>
+            <button class="btn btn-sm btn-outline" onclick="clearHistory()">清除</button>
+        </div>
+        <div class="history-list" id="historyList"></div>
+    </div>
+
+    <!-- 搜索结果 -->
+    <div class="results-panel" id="resultsPanel">
+        <div class="results-header">
+            <span id="resultsTitle">搜索结果</span>
+            <span id="resultsCount" style="color:#999;font-size:11px"></span>
+        </div>
+        <div class="results-list" id="resultsList"></div>
+    </div>
+
+    <!-- 可视化 -->
+    <div class="graph-container">
+        <div class="graph-toolbar">
+            <div class="legend">
+                <span class="legend-item"><span class="legend-dot question"></span> 问题</span>
+                <span class="legend-item"><span class="legend-dot paragraph"></span> 段落</span>
+                <span class="legend-item"><span class="legend-dot entity"></span> 实体</span>
+                <span class="legend-item"><span class="legend-dot answer" style="background:#e74c3c;border:2px solid #c0392b"></span> 答案节点</span>
+                <span class="legend-item"><span style="width:20px;height:2px;background:#e74c3c;border-top:2px dashed #e74c3c"></span> 推理路径</span>
+            </div>
+            <div style="font-size:11px;color:#999" id="graphStats">暂无数据</div>
+        </div>
+        <div id="mynetwork">
+            <div style="display:flex;justify-content:center;align-items:center;height:100%;color:#ccc;font-size:14px;flex-direction:column;gap:8px">
+                <div style="font-size:40px">🗺️</div>
+                <div>搜索问题后，点击问题查看知识图谱</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 聚类结果 -->
+    <div class="cluster-result" id="clusterResult">
+        <div style="font-weight:600;margin-bottom:8px;color:#444;font-size:13px">📊 聚类分析结果</div>
+        <div id="clusterTags"></div>
+    </div>
+</div>
+
+<!-- 节点详情弹窗 -->
+<div class="modal-overlay" id="nodeModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modalTitle">节点详情</h3>
+            <button class="modal-close" onclick="closeNodeModal()">×</button>
+        </div>
+        <div class="modal-body" id="modalBody"></div>
+    </div>
+</div>
+
+<!-- 统计面板弹窗 -->
+<div class="modal-overlay stats-modal" id="statsModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>📈 数据统计面板</h3>
+            <button class="modal-close" onclick="closeStatsModal()">×</button>
+        </div>
+        <div class="modal-body" id="statsModalBody">
+            <div style="text-align:center;padding:30px;color:#999">加载中...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ===== 全局变量 =====
+let selectedQid = null;
+let selectedQtext = "";
+let network = null;
+let nodesDataSet = null;
+let edgesDataSet = null;
+let queryHistory = [];
+let currentQuestionText = "";
+let currentAnswerText = "";
+
+const RECOMMENDED_KEYWORDS = [
+    { keyword: "magazine", label: "📰 杂志/期刊", count: "约 120 条" },
+    { keyword: "university", label: "🎓 大学/教育", count: "约 350 条" },
+    { keyword: "football", label: "⚽ 足球/体育", count: "约 80 条" },
+    { keyword: "film", label: "🎬 电影/导演", count: "约 200 条" },
+    { keyword: "president", label: "🏛️ 总统/政治", count: "约 150 条" },
+    { keyword: "album", label: "💿 音乐/专辑", count: "约 90 条" },
+    { keyword: "novel", label: "📖 小说/文学", count: "约 110 条" },
+    { keyword: "company", label: "🏢 公司/企业", count: "约 180 条" },
+    { keyword: "award", label: "🏆 奖项/荣誉", count: "约 60 条" },
+    { keyword: "war", label: "⚔️ 战争/历史", count: "约 100 条" },
+    { keyword: "science", label: "🔬 科学/研究", count: "约 70 条" },
+    { keyword: "city", label: "🏙️ 城市/地点", count: "约 420 条" },
+    { keyword: "artist", label: "🎨 艺术家/画家", count: "约 50 条" },
+    { keyword: "hospital", label: "🏥 医院/医学", count: "约 40 条" },
+];
+
+// ===== 初始化 =====
+document.addEventListener("DOMContentLoaded", function() {
+    initNetwork();
+    loadStats();
+    initKeywordDropdown();
+    loadHistory();
+    
+    document.getElementById("kw").addEventListener("keyup", function(e) {
+        if (e.key === "Enter") searchQuestions();
+    });
+    
+    document.addEventListener("click", function(e) {
+        const wrapper = document.querySelector(".search-wrapper");
+        if (!wrapper.contains(e.target)) {
+            document.getElementById("searchDropdown").classList.remove("show");
+        }
+    });
+});
+
+// ===== 初始化关键词下拉 =====
+function initKeywordDropdown() {
+    const dropdown = document.getElementById("searchDropdown");
+    dropdown.innerHTML = '<div class="dropdown-header">🔥 热门推荐关键词</div>';
+    RECOMMENDED_KEYWORDS.forEach(item => {
+        const div = document.createElement("div");
+        div.className = "dropdown-item";
+        div.innerHTML = `<span>${item.label}</span><span class="tag-count">${item.count}</span>`;
+        div.onclick = function() { selectKeyword(item.keyword); };
+        dropdown.appendChild(div);
+    });
+}
+
+function selectKeyword(keyword) {
+    document.getElementById("kw").value = keyword;
+    document.getElementById("searchDropdown").classList.remove("show");
+    searchQuestions();
+}
+
+function toggleDropdown(event) {
+    event.stopPropagation();
+    document.getElementById("searchDropdown").classList.toggle("show");
+}
+
+// ===== 初始化 vis.js =====
+function initNetwork() {
+    nodesDataSet = new vis.DataSet([]);
+    edgesDataSet = new vis.DataSet([]);
+    
+    const container = document.getElementById("mynetwork");
+    const options = {
+        physics: {
+            enabled: true,
+            solver: "forceAtlas2Based",
+            forceAtlas2Based: {
+                gravitationalConstant: -30,
+                centralGravity: 0.005,
+                springLength: 130,
+                springConstant: 0.02,
+                damping: 0.4
+            },
+            stabilization: { iterations: 100 }
+        },
+        nodes: {
+            font: { size: 11, face: "Arial", color: "#333" },
+            borderWidth: 2,
+            shadow: { enabled: true, size: 4 },
+            margin: 8
+        },
+        edges: {
+            arrows: { to: { enabled: true, scaleFactor: 0.6 } },
+            font: { size: 9, align: "middle", color: "#666" },
+            smooth: { type: "continuous", roundness: 0.3 },
+            color: { color: "#bdc3c7", highlight: "#3498db", hover: "#3498db" },
+            width: 1.5
+        },
+        groups: {
+            Question: {
+                color: { background: "#3498db", border: "#2980b9" },
+                shape: "box",
+                size: 25,
+                font: { color: "white", size: 12 }
+            },
+            Paragraph: {
+                color: { background: "#2ecc71", border: "#27ae60" },
+                shape: "ellipse",
+                size: 20,
+                font: { color: "white", size: 11 }
+            },
+            Entity: {
+                color: { background: "#e67e22", border: "#d35400" },
+                shape: "dot",
+                size: 14,
+                font: { color: "#333", size: 10 }
+            }
+        },
+        interaction: {
+            hover: true,
+            tooltipDelay: 150,
+            navigationButtons: true,
+            keyboard: { enabled: true },
+            zoomView: true,
+            dragView: true
+        }
+    };
+    
+    network = new vis.Network(container, { nodes: nodesDataSet, edges: edgesDataSet }, options);
+    
+    // 单击节点显示详情弹窗
+    network.on("click", function(params) {
+        if (params.nodes.length > 0) {
+            const node = nodesDataSet.get(params.nodes[0]);
+            if (node) {
+                showNodeDetail(node);
+            }
+        }
+    });
+}
+
+// ===== 加载统计数据 =====
+function loadStats() {
+    fetch("/api/stats")
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById("statQuestions").textContent = data.questions;
+            document.getElementById("statParagraphs").textContent = data.paragraphs;
+            document.getElementById("statEntities").textContent = data.entities;
+            document.getElementById("statRelations").textContent = data.relations;
+        })
+        .catch(() => {
+            document.querySelectorAll(".stat-item .number").forEach(el => el.textContent = "?");
+        });
+}
+
+// ===== 信息栏 =====
+function setInfo(msg, type = "green") {
+    const bar = document.getElementById("infoBar");
+    const dotColors = { green: "#2ecc71", blue: "#3498db", orange: "#f39c12", red: "#e74c3c" };
+    bar.innerHTML = `<span class="status-dot" style="background:${dotColors[type] || '#2ecc71'};flex-shrink:0"></span> ${msg}`;
+}
+
+// ===== 1. 搜索问题 =====
+function searchQuestions() {
+    const kw = document.getElementById("kw").value.trim();
+    if (!kw) { setInfo("⚠️ 请输入或选择一个关键词", "orange"); return; }
+    setInfo("⏳ 正在搜索...", "blue");
+    
+    fetch(`/api/search?kw=${encodeURIComponent(kw)}`)
+        .then(r => r.json())
+        .then(data => {
+            const panel = document.getElementById("resultsPanel");
+            const list = document.getElementById("resultsList");
+            const count = document.getElementById("resultsCount");
+            
+            if (data.length === 0) {
+                panel.classList.remove("show");
+                setInfo("😕 未找到相关问题", "orange");
+                return;
+            }
+            
+            panel.classList.add("show");
+            count.textContent = `共 ${data.length} 条`;
+            document.getElementById("resultsTitle").textContent = `📋 搜索结果 (${kw})`;
+            
+            list.innerHTML = data.map(d => {
+                const safeText = d.text.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+                return `
+                    <a class="result-item" href="#"
+                       onclick="selectQuestion('${d.id}', '${safeText}'); return false">
+                        ${d.text}
+                        <span class="answer-tag">${d.answer}</span>
+                        <div class="meta">类型: ${d.type || '-'} | 难度: ${d.level || '-'}</div>
+                    </a>
+                `;
+            }).join("");
+            
+            setInfo(`✅ 找到 ${data.length} 条结果`, "green");
+        })
+        .catch(err => setInfo("❌ 搜索失败: " + err.message, "red"));
+}
+
+// ===== 2. 选择问题 =====
+function selectQuestion(qid, qtext) {
+    selectedQid = qid;
+    selectedQtext = qtext;
+    
+    document.querySelectorAll(".result-item").forEach(function(el) { el.classList.remove("selected"); });
+    const items = document.querySelectorAll(".result-item");
+    for (let i = 0; i < items.length; i++) {
+        if ((items[i].getAttribute("onclick") || "").includes(qid)) {
+            items[i].classList.add("selected");
+            break;
+        }
+    }
+    
+    setInfo(`✅ 已选择: <b>${qtext.substring(0, 60)}...</b>`, "green");
+}
+
+// ===== 3. 多跳查询（带答案高亮和推理路径）=====
+function multiHopQuery() {
+    if (!selectedQid) {
+        setInfo("⚠️ 请先搜索并选择一个问题！", "orange");
+        return;
+    }
+    
+    const depth = document.getElementById("depth").value;
+    setInfo("⏳ 正在查询 Neo4j 数据库...", "blue");
+    
+    fetch("/api/multihop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ qid: selectedQid, depth: parseInt(depth) })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.nodes.length === 0) {
+            setInfo("⚠️ 未找到相关节点", "orange");
+            return;
+        }
+        
+        // 记录查询历史
+        addToHistory(selectedQtext, selectedQid);
+        
+        currentQuestionText = data.questionText || selectedQtext;
+        currentAnswerText = data.answerText || "";
+        
+        // 处理节点：答案节点用红色边框
+        const processedNodes = data.nodes.map(n => {
+            if (n.isAnswer) {
+                return {
+                    ...n,
+                    color: { background: "#e74c3c", border: "#c0392b" },
+                    borderWidth: 4,
+                    size: (n.group === "Question" ? 30 : (n.group === "Paragraph" ? 25 : 18)),
+                    font: { color: "white", size: 13, face: "Arial", bold: true }
+                };
+            }
+            return n;
+        });
+        
+        // 处理边：推理路径用红色虚线
+        const processedEdges = data.edges.map(e => {
+            if (e.isReasoningPath) {
+                return {
+                    ...e,
+                    color: { color: "#e74c3c", highlight: "#c0392b", hover: "#c0392b" },
+                    width: 3,
+                    dashes: [5, 3],
+                    label: e.label + " 🏆"
+                };
+            }
+            return e;
+        });
+        
+        nodesDataSet.clear();
+        edgesDataSet.clear();
+        nodesDataSet.add(processedNodes);
+        edgesDataSet.add(processedEdges);
+        
+        // 统计
+        const counts = {};
+        data.nodes.forEach(n => { counts[n.group] = (counts[n.group] || 0) + 1; });
+        const stats = Object.entries(counts).map(([k,v]) => `${k}: ${v}`).join(" | ");
+        document.getElementById("graphStats").textContent = `节点: ${data.nodes.length} | 边: ${data.edges.length} | 答案: ${currentAnswerText}`;
+        
+        // 显示答案信息
+        let answerMsg = `✅ 显示 <b>${data.nodes.length}</b> 个节点, <b>${data.edges.length}</b> 条关系`;
+        if (currentAnswerText) {
+            answerMsg += ` | 🏆 答案: <b style="color:#e74c3c">${currentAnswerText}</b>`;
+        }
+        answerMsg += ` | ${stats}`;
+        setInfo(answerMsg, "green");
+    })
+    .catch(err => setInfo("❌ 查询失败: " + err.message, "red"));
+}
+
+// ===== 4. 节点详情弹窗 =====
+function showNodeDetail(node) {
+    const modal = document.getElementById("nodeModal");
+    const title = document.getElementById("modalTitle");
+    const body = document.getElementById("modalBody");
+    
+    title.textContent = `📍 ${node.group} 节点详情`;
+    
+    let html = '';
+    
+    // 基本信息
+    html += `<div class="detail-row">
+        <div class="detail-label">节点类型</div>
+        <div class="detail-value">${node.group}</div>
+    </div>`;
+    
+    html += `<div class="detail-row">
+        <div class="detail-label">显示名称</div>
+        <div class="detail-value">${node.label}</div>
+    </div>`;
+    
+    // 完整文本
+    if (node.fullText) {
+        const isAnswerHighlight = node.isAnswer ? 'answer-highlight' : '';
+        html += `<div class="detail-row">
+            <div class="detail-label">完整内容 ${node.isAnswer ? '🏆 答案节点' : ''}</div>
+            <div class="detail-value ${isAnswerHighlight}">${node.fullText}</div>
+        </div>`;
+    }
+    
+    // 如果是答案节点，显示答案
+    if (node.isAnswer && node.answer) {
+        html += `<div class="detail-row" style="background:#fff3cd;border:1px solid #ffc107">
+            <div class="detail-label" style="color:#856404">🏆 答案</div>
+            <div class="detail-value" style="font-size:18px;font-weight:700;color:#e74c3c">${node.answer}</div>
+        </div>`;
+    }
+    
+    // 节点 ID
+    html += `<div class="detail-row">
+        <div class="detail-label">节点 ID</div>
+        <div class="detail-value" style="font-size:11px;color:#999">${node.id}</div>
+    </div>`;
+    
+    body.innerHTML = html;
+    modal.classList.add("show");
+}
+
+function closeNodeModal() {
+    document.getElementById("nodeModal").classList.remove("show");
+}
+
+// ===== 5. 聚类分析 =====
+function clusterAnalysis() {
+    setInfo("⏳ 正在进行聚类分析...", "blue");
+    
+    fetch("/api/cluster")
+        .then(r => r.json())
+        .then(data => {
+            const div = document.getElementById("clusterResult");
+            const tags = document.getElementById("clusterTags");
+            
+            div.classList.add("show");
+            
+            const colors = ["#3498db","#2ecc71","#e74c3c","#f39c12","#9b59b6",
+                          "#1abc9c","#e67e22","#34495e","#16a085","#c0392b",
+                          "#2980b9","#27ae60","#8e44ad","#d35400","#2c3e50"];
+            
+            const topClusters = data.clusters.slice(0, 20);
+            tags.innerHTML = topClusters.map((c, i) => 
+                `<span class="cluster-tag" style="background:${colors[i % colors.length]}">
+                    簇 ${c.id} (${c.size} 节点)
+                </span>`
+            ).join("");
+            
+            setInfo(`📊 聚类完成，共 ${data.clusters.length} 个簇，显示前 20 个`, "green");
+        })
+        .catch(err => setInfo("❌ 聚类失败: " + err.message, "red"));
+}
+
+// ===== 6. 统计面板 =====
+function showStatsModal() {
+    const modal = document.getElementById("statsModal");
+    const body = document.getElementById("statsModalBody");
+    modal.classList.add("show");
+    
+    body.innerHTML = '<div style="text-align:center;padding:30px;color:#999">⏳ 加载中...</div>';
+    
+    fetch("/api/stats")
+        .then(r => r.json())
+        .then(data => {
+            let html = '';
+            
+            // 概览卡片
+            html += '<div class="stats-grid">';
+            html += `<div class="stats-card"><div class="num">${data.questions}</div><div class="lbl">问题总数</div></div>`;
+            html += `<div class="stats-card" style="background:linear-gradient(135deg,#2ecc71,#27ae60)"><div class="num">${data.paragraphs}</div><div class="lbl">段落总数</div></div>`;
+            html += `<div class="stats-card" style="background:linear-gradient(135deg,#e67e22,#d35400)"><div class="num">${data.entities}</div><div class="lbl">实体总数</div></div>`;
+            html += `<div class="stats-card" style="background:linear-gradient(135deg,#e74c3c,#c0392b)"><div class="num">${data.relations}</div><div class="lbl">关系总数</div></div>`;
+            html += '</div>';
+            
+            // 问题类型分布
+            if (data.types && data.types.length > 0) {
+                html += '<div class="stats-section"><h4>📋 问题类型分布</h4>';
+                const maxTypeCount = Math.max(...data.types.map(t => t.count));
+                data.types.forEach(t => {
+                    const pct = Math.round((t.count / maxTypeCount) * 100);
+                    html += `<div class="stats-bar-container">
+                        <div class="stats-bar-label"><span>${t.type}</span><span>${t.count}</span></div>
+                        <div class="stats-bar">
+                            <div class="stats-bar-fill" style="width:${pct}%;background:#3498db">${t.count}</div>
+                        </div>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            // 难度分布
+            if (data.levels && data.levels.length > 0) {
+                html += '<div class="stats-section"><h4>📊 难度分布</h4>';
+                const maxLevelCount = Math.max(...data.levels.map(l => l.count));
+                const levelColors = ["#2ecc71", "#f39c12", "#e74c3c", "#3498db", "#9b59b6"];
+                data.levels.forEach((l, idx) => {
+                    const pct = Math.round((l.count / maxLevelCount) * 100);
+                    html += `<div class="stats-bar-container">
+                        <div class="stats-bar-label"><span>${l.level || '未知'}</span><span>${l.count}</span></div>
+                        <div class="stats-bar">
+                            <div class="stats-bar-fill" style="width:${pct}%;background:${levelColors[idx % levelColors.length]}">${l.count}</div>
+                        </div>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            // 热门实体 TOP 10
+            if (data.topEntities && data.topEntities.length > 0) {
+                html += '<div class="stats-section"><h4>🔥 热门实体 TOP 10</h4>';
+                const maxEntCount = Math.max(...data.topEntities.slice(0, 10).map(e => e.count));
+                const entityColors = ["#e74c3c","#e67e22","#f39c12","#2ecc71","#3498db",
+                                    "#9b59b6","#1abc9c","#34495e","#16a085","#c0392b"];
+                data.topEntities.slice(0, 10).forEach((e, i) => {
+                    const pct = Math.round((e.count / maxEntCount) * 100);
+                    html += `<div class="stats-bar-container">
+                        <div class="stats-bar-label">
+                            <span>${i+1}. ${e.name}</span>
+                            <span>${e.count} 次提及</span>
+                        </div>
+                        <div class="stats-bar">
+                            <div class="stats-bar-fill" style="width:${pct}%;background:${entityColors[i]}">${e.count}</div>
+                        </div>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            body.innerHTML = html;
+        })
+        .catch(err => {
+            body.innerHTML = `<div style="text-align:center;padding:30px;color:#e74c3c">❌ 加载失败: ${err.message}</div>`;
+        });
+}
+
+function closeStatsModal() {
+    document.getElementById("statsModal").classList.remove("show");
+}
+
+// ===== 7. 全屏模式 =====
+function toggleFullscreen() {
+    document.body.classList.toggle("fullscreen-mode");
+    const isFullscreen = document.body.classList.contains("fullscreen-mode");
+    
+    if (isFullscreen) {
+        setInfo("⛶ 已进入全屏模式，按 ESC 或再次点击按钮退出", "blue");
+        // 触发网络重绘以适应新尺寸
+        setTimeout(() => {
+            if (network) network.redraw();
+        }, 300);
+    } else {
+        setInfo("⛶ 已退出全屏模式", "green");
+    }
+}
+
+// ===== 8. 清空图谱 =====
+function clearGraph() {
+    nodesDataSet.clear();
+    edgesDataSet.clear();
+    document.getElementById("graphStats").textContent = "暂无数据";
+    document.getElementById("clusterResult").classList.remove("show");
+    selectedQid = null;
+    currentQuestionText = "";
+    currentAnswerText = "";
+    setInfo("🗑️ 图谱已清空", "green");
+}
+
+// ===== 9. 查询历史管理 =====
+function addToHistory(qtext, qid) {
+    // 避免重复
+    queryHistory = queryHistory.filter(h => h.qid !== qid);
+    
+    // 添加到开头
+    queryHistory.unshift({
+        qid: qid,
+        qtext: qtext.substring(0, 50) + (qtext.length > 50 ? "..." : ""),
+        time: new Date().toLocaleTimeString()
+    });
+    
+    // 最多保留 15 条
+    if (queryHistory.length > 15) {
+        queryHistory = queryHistory.slice(0, 15);
+    }
+    
+    saveHistory();
+    renderHistory();
+}
+
+function removeFromHistory(qid) {
+    queryHistory = queryHistory.filter(h => h.qid !== qid);
+    saveHistory();
+    renderHistory();
+    
+    if (queryHistory.length === 0) {
+        document.getElementById("historyPanel").classList.remove("show");
+    }
+}
+
+function clearHistory() {
+    queryHistory = [];
+    saveHistory();
+    renderHistory();
+    document.getElementById("historyPanel").classList.remove("show");
+    setInfo("🗑️ 查询历史已清除", "green");
+}
+
+function loadHistory() {
+    try {
+        const saved = localStorage.getItem("hotpotqa_history");
+        if (saved) {
+            queryHistory = JSON.parse(saved);
+            if (queryHistory.length > 0) {
+                renderHistory();
+            }
+        }
+    } catch (e) {
+        console.log("无法加载历史记录");
+    }
+}
+
+function saveHistory() {
+    try {
+        localStorage.setItem("hotpotqa_history", JSON.stringify(queryHistory));
+    } catch (e) {
+        console.log("无法保存历史记录");
+    }
+}
+
+function renderHistory() {
+    const panel = document.getElementById("historyPanel");
+    const list = document.getElementById("historyList");
+    
+    if (queryHistory.length === 0) {
+        panel.classList.remove("show");
+        return;
+    }
+    
+    panel.classList.add("show");
+    list.innerHTML = queryHistory.map(h => `
+        <span class="history-item" onclick="restoreHistory('${h.qid}')" title="${h.qtext}">
+            ${h.qtext}
+            <span class="remove-btn" onclick="event.stopPropagation(); removeFromHistory('${h.qid}')">×</span>
+        </span>
+    `).join("");
+}
+
+function restoreHistory(qid) {
+    selectedQid = qid;
+    // 找到对应的问题文本
+    const h = queryHistory.find(item => item.qid === qid);
+    if (h) {
+        selectedQtext = h.qtext;
+        setInfo(`🔄 已恢复历史查询: <b>${h.qtext}</b> | 点击"多跳查询"查看`, "blue");
+        
+        // 自动执行多跳查询
+        multiHopQuery();
+    }
+}
+
+// ===== 10. 点击模态框外部关闭 =====
+document.addEventListener("click", function(e) {
+    const nodeModal = document.getElementById("nodeModal");
+    const statsModal = document.getElementById("statsModal");
+    
+    if (e.target === nodeModal) {
+        closeNodeModal();
+    }
+    if (e.target === statsModal) {
+        closeStatsModal();
+    }
+});
+
+// ===== 11. ESC 键关闭模态框和全屏 =====
+document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") {
+        closeNodeModal();
+        closeStatsModal();
+        
+        // 退出全屏模式
+        if (document.body.classList.contains("fullscreen-mode")) {
+            document.body.classList.remove("fullscreen-mode");
+            setInfo("⛶ 已退出全屏模式", "green");
+            setTimeout(() => {
+                if (network) network.redraw();
+            }, 300);
+        }
+    }
+});
+
+// ===== 12. 窗口自适应 =====
+window.addEventListener("resize", function() {
+    if (network) {
+        network.redraw();
+    }
+});
+</script>
+</body>
+</html>
